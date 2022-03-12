@@ -1,5 +1,6 @@
 package com.github.video.main
 
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.github.video.getData
@@ -8,15 +9,16 @@ import com.github.video.models.PhotoUiModel
 import com.github.video.models.VideoUiModel
 
 class MainViewModel : ViewModel() {
-    val mediaListState: MutableLiveData<List<ListItem>> = MutableLiveData()
-    var lastId: Int = 0
+    private val _mediaListState: MutableLiveData<List<ListItem>> = MutableLiveData()
+    val mediaListState: LiveData<List<ListItem>> get() = _mediaListState
+    private var lastId: Int = 0
 
     init {
-        mediaListState.value = generateData()
+        _mediaListState.value = generateData()
     }
 
     fun onAddToFavClicked(listItem: ListItem) {
-        mediaListState.value = mediaListState.value?.map { item ->
+        _mediaListState.value = _mediaListState.value?.map { item ->
             if (item == listItem) {
                 when (item) {
                     is VideoUiModel -> item.copy(isFavorite = !item.isFavorite)
@@ -30,13 +32,13 @@ class MainViewModel : ViewModel() {
     }
 
     fun onAddMediaClicked() {
-        mediaListState.value = mediaListState.value.orEmpty() + generateData()
+        _mediaListState.value = _mediaListState.value.orEmpty() + generateData()
     }
 
     private fun generateData(): List<ListItem> {
         return getData().map { url ->
             lastId++
-            if (url.endsWith("mp4")) {
+            if (url.endsWith(MP4_EXTENSION)) {
                 VideoUiModel(
                     id = lastId.toString(),
                     videoUrl = url
@@ -50,3 +52,5 @@ class MainViewModel : ViewModel() {
         }
     }
 }
+
+private const val MP4_EXTENSION = "mp4"

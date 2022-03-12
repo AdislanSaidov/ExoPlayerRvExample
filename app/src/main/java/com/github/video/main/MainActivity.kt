@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
             addToFavClick = viewModel::onAddToFavClicked
         )
 
-        binding.rvMedia.apply {
+        with(binding.rvMedia) {
             adapter = mediaAdapter
             layoutManager = GridLayoutManager(this@MainActivity, 2)
             init(
@@ -68,10 +68,5 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         binding.rvMedia.pausePlayer()
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        binding.rvMedia.releasePlayer()
-        super.onDestroy()
     }
 }

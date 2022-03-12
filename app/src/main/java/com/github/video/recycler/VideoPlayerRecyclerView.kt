@@ -1,6 +1,7 @@
 package com.github.video.recycler
 
 import android.content.Context
+import android.os.Parcelable
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
@@ -11,6 +12,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.github.video.R
 import com.github.video.databinding.ItemPlayerViewBinding
+import com.github.video.getFirstY
 import com.github.video.models.ListItem
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
@@ -19,6 +21,7 @@ import com.google.android.exoplayer2.offline.StreamKey
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.exoplayer2.upstream.DataSource
+import kotlinx.android.parcel.Parcelize
 import java.util.Collections
 import kotlin.math.abs
 
@@ -29,13 +32,12 @@ class VideoPlayerRecyclerView @JvmOverloads constructor(
 ) : RecyclerView(context, attrs, defStyleAttr) {
 
     private var ivVideoPreview: ImageView? = null
-    private var viewHolderParent: View? = null
     private var flContainer: FrameLayout? = null
     private var playerView: PlayerView? = null
     private var player: ExoPlayer? = null
 
-    private var playPosition: Int = -1
-    private var targetPosition: Int = -1
+    private var playPosition: Int = NO_POSITION
+    private var targetPosition: Int = NO_POSITION
     private var isVideoViewAdded: Boolean = false
     private val appContext: Context = context.applicationContext
     private val videoStates: MutableMap<Int, Long> = mutableMapOf()
@@ -80,8 +82,8 @@ class VideoPlayerRecyclerView @JvmOverloads constructor(
     }
 
     fun update() {
-        targetPosition = -1
-        playPosition = -1
+        targetPosition = NO_POSITION
+        playPosition = NO_POSITION
         postDelayed({
             tryToPlayVideo()
         }, ITEMS_READY_DELAY)
@@ -89,31 +91,25 @@ class VideoPlayerRecyclerView @JvmOverloads constructor(
 
     private fun tryToPlayVideo() {
         this.parent ?: return
-        val gridLayoutManager = layoutManager as GridLayoutManager
+        val gridLayoutManager = layoutManager as? GridLayoutManager
+            ?: error("a layoutManager must be a GridLayoutManager")
         // Find visible VideoItems
         val startPosition: Int = gridLayoutManager.findFirstVisibleItemPosition()
         val endPosition: Int = gridLayoutManager.findLastVisibleItemPosition()
 
-        if (startPosition < 0 || endPosition < 0) {
+        val items = itemsCallback()
+        if (startPosition < 0 || endPosition < 0 || startPosition >= items.size || endPosition >= items.size) {
             return
         }
-        var index = startPosition
-        val visibleVideoItems = itemsCallback().subList(startPosition, endPosition).map { item ->
-            // Keep positions from original list
-            (index to item).also { index++ }
-        }.filter { (_, item) ->
-            item is VideoItem
-        }
 
-        visibleVideoItems.find {
-            val position = it.first
-            // Check if we can play video in one of the visible VideoItems
-            canPlayVideoAtPosition(position).also { canPlay ->
-                if (canPlay && position != playPosition) {
+        for (pos in startPosition..endPosition) {
+            if (items.getOrNull(pos) is VideoItem && canPlayVideoAtPosition(pos)) {
+                if (pos != playPosition) {
                     stopVideo()
-                    targetPosition = position
+                    targetPosition = pos
                     playVideo()
                 }
+                break
             }
         }
     }
@@ -143,8 +139,8 @@ class VideoPlayerRecyclerView @JvmOverloads constructor(
             it.pause()
             // Keep current position of video
             videoStates[playPosition] = it.currentPosition
-            targetPosition = -1
-            playPosition = -1
+            targetPosition = NO_POSITION
+            playPosition = NO_POSITION
         }
     }
 
@@ -199,31 +195,61 @@ class VideoPlayerRecyclerView @JvmOverloads constructor(
         }
     }
 
-    fun releasePlayer() {
+    private fun releasePlayer() {
         player?.run {
             release()
             player = null
         }
         playerView = null
-        viewHolderParent = null
+        flContainer = null
+        ivVideoPreview = null
     }
 
     fun pausePlayer() {
-        if (playPosition != -1) {
+        if (playPosition != NO_POSITION) {
             player?.pause()
         }
     }
 
     fun resumePlayer() {
-        if (playPosition != -1) {
+        if (playPosition != NO_POSITION) {
             player?.play()
         }
     }
 
-    private fun View.getFirstY(): Int {
-        val location = IntArray(2)
-        this.getLocationInWindow(location)
-        return location[1]
+    override fun onDetachedFromWindow() {
+        player?.let {
+            it.pause()
+            videoStates[playPosition] = it.currentPosition
+        }
+        releasePlayer()
+        super.onDetachedFromWindow()
+    }
+
+    @Parcelize
+    class State(
+        val superSavedState: Parcelable?,
+        val videoStates: MutableMap<Int, Long>,
+        val targetPosition: Int
+    ) : View.BaseSavedState(superSavedState), Parcelable
+
+    override fun onSaveInstanceState(): Parcelable {
+        val superState = super.onSaveInstanceState()
+        return State(
+            superSavedState = superState,
+            videoStates = videoStates,
+            targetPosition = targetPosition
+        )
+    }
+
+    override fun onRestoreInstanceState(state: Parcelable?) {
+        val savedState = state as? State
+        super.onRestoreInstanceState(savedState?.superSavedState ?: state)
+        savedState?.let {
+            this.videoStates.clear()
+            this.videoStates.putAll(it.videoStates)
+            this.targetPosition = it.targetPosition
+        }
     }
 }
 
